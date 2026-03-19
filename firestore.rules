@@ -1,0 +1,207 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // ===============================================================
+    // Assumed Data Model
+    // ===============================================================
+    //
+    // Collection: /users/{uid}
+    // Fields:
+    //   - uid: string (required) - Firebase Auth ID
+    //   - email: string (required) - User's email
+    //   - displayName: string (optional) - User's display name
+    //   - photoURL: string (optional) - User's profile photo URL
+    //   - createdAt: timestamp (optional) - When the user joined
+    //   - currentGroupId: string (optional) - The ID of the group the user is currently viewing
+    //
+    // Collection: /groups/{groupId}
+    // Fields:
+    //   - id: string (required)
+    //   - name: string (required)
+    //   - ownerUid: string (required)
+    //   - members: list (required) - List of UIDs
+    //   - createdAt: timestamp (required)
+    //
+    // Collection: /walks/{walkId}
+    // Fields:
+    //   - groupId: string (required)
+    //   - walkerUid: string (required)
+    //   - walkerName: string (required)
+    //   - timestamp: timestamp (required)
+    //   - didPoop: bool (required)
+    //   - didPee: bool (optional)
+    //   - notes: string (optional, max 500 chars)
+    //
+    // Collection: /feedings/{feedingId}
+    // Fields:
+    //   - groupId: string (required)
+    //   - feederUid: string (required)
+    //   - feederName: string (required)
+    //   - timestamp: timestamp (required)
+    //   - amount: string (required)
+    //   - notes: string (optional, max 500 chars)
+    //   - photoURL: string (optional, max 1MB)
+    //
+    // Collection: /dogs/{dogId}
+    // Fields:
+    //   - groupId: string (required)
+    //   - name: string (required)
+    //   - photoURL: string (optional, max 1MB)
+    //   - updatedBy: string (required)
+    //
+    // ===============================================================
+
+    // ===============================================================
+    // Helper Functions
+    // ===============================================================
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    function isAdmin() {
+      return isAuthenticated() && (
+        (request.auth.token.email == "sbnin55@gmail.com" && request.auth.token.email_verified == true) ||
+        (exists(/databases/$(database)/documents/users/$(request.auth.uid)) && 
+         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin')
+      );
+    }
+
+    function isGroupMember(groupId) {
+      return isAuthenticated() && 
+             groupId != null &&
+             exists(/databases/$(database)/documents/groups/$(groupId)) &&
+             request.auth.uid in get(/databases/$(database)/documents/groups/$(groupId)).data.members;
+    }
+
+    function hasRequiredFields(fields) {
+      return request.resource.data.keys().hasAll(fields);
+    }
+
+    function hasOnlyAllowedFields(fields) {
+      return request.resource.data.keys().hasOnly(fields);
+    }
+
+    function isValidEmail(email) {
+      return email is string && email.matches("^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}$");
+    }
+
+    // ===============================================================
+    // Domain Validators
+    // ===============================================================
+    function isValidUser(data, uid) {
+      return hasOnlyAllowedFields(['uid', 'email', 'displayName', 'photoURL', 'createdAt', 'role', 'currentGroupId']) &&
+             data.uid == uid &&
+             isValidEmail(data.email) &&
+             (data.displayName == null || (data.displayName is string && data.displayName.size() < 100)) &&
+             (data.photoURL == null || (data.photoURL is string && data.photoURL.size() < 2000)) &&
+             (data.createdAt == null || data.createdAt is timestamp) &&
+             (data.currentGroupId == null || data.currentGroupId is string) &&
+             // Non-admins cannot change their own role
+             (request.auth.uid == uid ? (
+               resource == null || 
+               !('role' in data) || 
+               !('role' in resource.data) || 
+               data.role == resource.data.role
+             ) : true);
+    }
+
+    function isValidGroup(data) {
+      return hasRequiredFields(['id', 'name', 'ownerUid', 'members', 'createdAt']) &&
+             hasOnlyAllowedFields(['id', 'name', 'ownerUid', 'members', 'createdAt']) &&
+             data.id is string &&
+             data.name is string && data.name.size() > 0 && data.name.size() < 100 &&
+             data.ownerUid is string &&
+             data.members is list && data.members.size() > 0 && data.members.size() < 100 &&
+             data.createdAt is timestamp;
+    }
+
+    function isValidWalk(data) {
+      return hasRequiredFields(['groupId', 'walkerUid', 'walkerName', 'timestamp', 'didPoop']) &&
+             hasOnlyAllowedFields(['groupId', 'walkerUid', 'walkerName', 'timestamp', 'didPoop', 'didPee', 'notes']) &&
+             isGroupMember(data.groupId) &&
+             data.walkerUid == request.auth.uid &&
+             data.walkerName is string && data.walkerName.size() > 0 && data.walkerName.size() < 100 &&
+             data.timestamp is timestamp &&
+             data.didPoop is bool &&
+             (data.didPee == null || data.didPee is bool) &&
+             (data.notes == null || (data.notes is string && data.notes.size() <= 500));
+    }
+
+    function isValidFeeding(data) {
+      return hasRequiredFields(['groupId', 'feederUid', 'feederName', 'timestamp', 'amount']) &&
+             hasOnlyAllowedFields(['groupId', 'feederUid', 'feederName', 'timestamp', 'amount', 'notes', 'photoURL']) &&
+             isGroupMember(data.groupId) &&
+             data.feederUid == request.auth.uid &&
+             data.feederName is string && data.feederName.size() > 0 && data.feederName.size() < 100 &&
+             data.timestamp is timestamp &&
+             data.amount is string && data.amount.size() > 0 && data.amount.size() < 100 &&
+             (data.notes == null || (data.notes is string && data.notes.size() <= 500)) &&
+             (data.photoURL == null || (data.photoURL is string && data.photoURL.size() < 1000000));
+    }
+
+    function isValidDog(data) {
+      return hasRequiredFields(['groupId', 'name', 'updatedBy']) &&
+             hasOnlyAllowedFields(['groupId', 'name', 'photoURL', 'updatedBy']) &&
+             isGroupMember(data.groupId) &&
+             data.name is string && data.name.size() > 0 && data.name.size() < 50 &&
+             (data.photoURL == null || (data.photoURL is string && data.photoURL.size() < 1000000)) &&
+             data.updatedBy == request.auth.uid;
+    }
+
+    // ===============================================================
+    // Rules
+    // ===============================================================
+    match /users/{uid} {
+      allow read: if isAdmin() || isOwner(uid);
+      allow create: if isOwner(uid) && isValidUser(request.resource.data, uid);
+      allow update: if isAdmin() || (isOwner(uid) && isValidUser(request.resource.data, uid));
+      allow delete: if isAdmin();
+    }
+
+    match /groups/{groupId} {
+      // Allow get so users can find a group to join
+      allow get: if isAuthenticated();
+      // Only allow listing groups you are a member of
+      allow list: if isAdmin() || (isAuthenticated() && request.auth.uid in resource.data.members);
+      
+      allow create: if isAuthenticated() && isValidGroup(request.resource.data) && request.resource.data.ownerUid == request.auth.uid;
+      
+      allow update: if isAdmin() || (isAuthenticated() && isValidGroup(request.resource.data) && (
+        request.auth.uid in resource.data.members || // Existing member
+        (
+          // Joining: User is adding themselves to members
+          request.resource.data.members.hasAll(resource.data.members) &&
+          request.resource.data.members.size() == resource.data.members.size() + 1 &&
+          request.auth.uid in request.resource.data.members &&
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['members'])
+        )
+      ));
+      allow delete: if isAdmin() || (isAuthenticated() && resource.data.ownerUid == request.auth.uid);
+    }
+
+    match /walks/{walkId} {
+      allow read: if isAdmin() || (isAuthenticated() && isGroupMember(resource.data.groupId));
+      allow create: if isAuthenticated() && isValidWalk(request.resource.data);
+      allow update: if isAdmin() || (isAuthenticated() && isValidWalk(request.resource.data) && isGroupMember(resource.data.groupId));
+      allow delete: if isAdmin() || (isAuthenticated() && isGroupMember(resource.data.groupId));
+    }
+
+    match /feedings/{feedingId} {
+      allow read: if isAdmin() || (isAuthenticated() && isGroupMember(resource.data.groupId));
+      allow create: if isAuthenticated() && isValidFeeding(request.resource.data);
+      allow update: if isAdmin() || (isAuthenticated() && isValidFeeding(request.resource.data) && isGroupMember(resource.data.groupId));
+      allow delete: if isAdmin() || (isAuthenticated() && isGroupMember(resource.data.groupId));
+    }
+
+    match /dogs/{dogId} {
+      allow read: if isAdmin() || (isAuthenticated() && isGroupMember(resource.data.groupId));
+      allow create: if isAuthenticated() && isValidDog(request.resource.data);
+      allow update: if isAdmin() || (isAuthenticated() && isValidDog(request.resource.data) && isGroupMember(resource.data.groupId));
+      allow delete: if isAdmin() || (isAuthenticated() && isGroupMember(resource.data.groupId));
+    }
+  }
+}

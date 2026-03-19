@@ -1,0 +1,5 @@
+{
+  "name": "PawsTrack",
+  "description": "A shared dog walking tracker for roommates to log walks, track bathroom breaks, and stay synced on their pet's schedule.",
+  "requestFramePermissions": []
+}

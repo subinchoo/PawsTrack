@@ -1,0 +1,102 @@
+{
+  "entities": {
+    "User": {
+      "title": "User",
+      "description": "A user of the dog walking app.",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string", "description": "The unique Firebase Auth ID." },
+        "email": { "type": "string", "format": "email", "description": "The user's email address." },
+        "displayName": { "type": "string", "description": "The user's display name." },
+        "photoURL": { "type": "string", "description": "The user's profile photo URL." },
+        "createdAt": { "type": "string", "format": "date-time", "description": "When the user joined." },
+        "currentGroupId": { "type": "string", "description": "The ID of the group the user is currently viewing." }
+      },
+      "required": ["uid", "email"]
+    },
+    "Group": {
+      "title": "Group",
+      "description": "A household or group of roommates sharing a pet.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "The unique group ID." },
+        "name": { "type": "string", "description": "The name of the group (e.g. 'The Smith House')." },
+        "ownerUid": { "type": "string", "description": "The UID of the person who created the group." },
+        "members": { 
+          "type": "array", 
+          "items": { "type": "string" },
+          "description": "List of UIDs of users in this group."
+        },
+        "createdAt": { "type": "string", "format": "date-time", "description": "When the group was created." }
+      },
+      "required": ["name", "ownerUid", "members"]
+    },
+    "Walk": {
+      "title": "Walk",
+      "description": "A log of a dog walk.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "The unique walk ID." },
+        "groupId": { "type": "string", "description": "The ID of the group this walk belongs to." },
+        "walkerUid": { "type": "string", "description": "The UID of the person who walked the dog." },
+        "walkerName": { "type": "string", "description": "The name of the person who walked the dog." },
+        "timestamp": { "type": "string", "format": "date-time", "description": "When the walk occurred." },
+        "didPoop": { "type": "boolean", "description": "Whether the dog pooped during the walk." },
+        "didPee": { "type": "boolean", "description": "Whether the dog peed during the walk." },
+        "notes": { "type": "string", "description": "Any additional notes about the walk." }
+      },
+      "required": ["groupId", "walkerUid", "walkerName", "timestamp", "didPoop"]
+    },
+    "DogInfo": {
+      "title": "DogInfo",
+      "description": "Information about the dog.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "The unique dog ID." },
+        "groupId": { "type": "string", "description": "The ID of the group this dog belongs to." },
+        "name": { "type": "string", "description": "The dog's name." },
+        "photoURL": { "type": "string", "description": "The dog's profile photo URL (base64 or link)." },
+        "updatedBy": { "type": "string", "description": "UID of the user who last updated the info." }
+      },
+      "required": ["groupId", "name"]
+    },
+    "Feeding": {
+      "title": "Feeding",
+      "description": "A log of a dog feeding.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "The unique feeding ID." },
+        "groupId": { "type": "string", "description": "The ID of the group this feeding belongs to." },
+        "feederUid": { "type": "string", "description": "The UID of the person who fed the dog." },
+        "feederName": { "type": "string", "description": "The name of the person who fed the dog." },
+        "timestamp": { "type": "string", "format": "date-time", "description": "When the feeding occurred." },
+        "amount": { "type": "string", "description": "How much food was given (e.g. 1 cup)." },
+        "notes": { "type": "string", "description": "Any additional notes." },
+        "photoURL": { "type": "string", "description": "Photo of the meal." }
+      },
+      "required": ["groupId", "feederUid", "feederName", "timestamp", "amount"]
+    }
+  },
+  "firestore": {
+    "/users/{uid}": {
+      "schema": "User",
+      "description": "User profiles."
+    },
+    "/groups/{groupId}": {
+      "schema": "Group",
+      "description": "Household groups."
+    },
+    "/walks/{walkId}": {
+      "schema": "Walk",
+      "description": "Shared history of dog walks, filtered by groupId."
+    },
+    "/feedings/{feedingId}": {
+      "schema": "Feeding",
+      "description": "Shared history of dog feedings, filtered by groupId."
+    },
+    "/dogs/{dogId}": {
+      "schema": "DogInfo",
+      "description": "Dog information, filtered by groupId."
+    }
+  }
+}
